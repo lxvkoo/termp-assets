@@ -58,8 +58,9 @@ if (Get-Command scoop -ErrorAction SilentlyContinue) {
 
 # ----------------------------------------------------------------- 2. termp ---
 Step 'Installing termp'
-$buckets = (& scoop bucket list 2>$null) -join "`n"
-if ($buckets -notmatch '(?m)^\s*polter-dev\b') {
+$scoopRoot  = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE 'scoop' }
+$bucketDir  = Join-Path $scoopRoot 'buckets\polter-dev'
+if (-not (Test-Path $bucketDir)) {
     & scoop bucket add polter-dev https://github.com/polter-dev/scoop-bucket | Out-Null
     Ok 'Bucket polter-dev added.'
 } else {
