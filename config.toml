@@ -1,0 +1,39 @@
+activity_switching = true
+auto_update = false
+details_format = "Using {tool}"
+enabled = true
+fallback_messages = ["pressing buttons", "vibecoding"]
+feedback_url = "https://termp.polter.sh/#feedback-turnstile"
+headliner_idle_timeout = "60s"
+idle_clear_timeout = "20m"
+pin = ""
+scan_interval = "3s"
+start_at_login = false
+update_check = true
+
+[cta]
+  enabled = true
+  label = "What is this?"
+  url = "https://termp.polter.sh/"
+
+[display]
+  buttons = true
+  collection = true
+  elapsed_timer = true
+  small_image = true
+  tool_name = true
+
+[privacy]
+  directory_basename_only = true
+  show_directory = false
+
+[tools]
+
+[ui]
+  accent_color = "purple"
+
+[[custom_tools]]
+id = "pi"
+display_name = "Pi"
+match = { regex = "(?i)pi-coding-agent" }
+image_url = "https://raw.githubusercontent.com/lxvkoo/termp-assets/main/pi-icon.png"
