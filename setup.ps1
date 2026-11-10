@@ -86,20 +86,74 @@ Invoke-WebRequest -UseBasicParsing -Uri $CfgUrl -OutFile $CfgPath
 Ok "Config written to $CfgPath"
 Ok 'Custom tool rule: pi-coding-agent -> Pi, icon from raw.githubusercontent.com'
 
-# ---------------------------------------------------------------- 4. daemon ---
+# ------------------------------------------------- 4. hidden start helper ---
+Step 'Installing the hidden launcher'
+$HelperPath = Join-Path $env:LOCALAPPDATA 'termp\start-hidden.ps1'
+$HelperBody = @'
+# Starts the termp daemon in the background with no console window.
+$ErrorActionPreference = 'SilentlyContinue'
+
+$termp = (Get-Command termp).Source
+if (-not $termp) { $termp = Join-Path $env:USERPROFILE 'scoop\shims\termp.exe' }
+if (-not (Test-Path $termp)) { return }
+
+function Test-Daemon {
+    $out = & $termp status 2>$null | Out-String
+    return [bool]($out -match '(?m)^\s*Running\s+yes')
+}
+
+if (Test-Daemon) { return }
+
+# wait for Discord Desktop (Rich Presence needs it), max 2 minutes
+$deadline = (Get-Date).AddSeconds(120)
+while (-not (Get-Process Discord -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 5
+}
+
+Start-Process -FilePath $termp -ArgumentList 'start', '--foreground' -WindowStyle Hidden
+Start-Sleep -Seconds 5
+
+if (-not (Test-Daemon)) {
+    Start-Process -FilePath $termp -ArgumentList 'start', '--foreground' -WindowStyle Hidden
+}
+'@
+[IO.File]::WriteAllText($HelperPath, $HelperBody, (New-Object System.Text.UTF8Encoding($false)))
+Ok "Launcher written to $HelperPath"
+
+# ------------------------------------------------- 5. daemon + autostart ---
 Step 'Starting the daemon (hidden)'
+# NOTE: termp's own autostart is deliberately NOT used - on Windows the
+# detached `termp start` fails with "being used by another process".
 & $termp stop 2>$null | Out-Null
 Start-Sleep -Milliseconds 500
-# NOTE: autostart is deliberately NOT used - `termp start` in detached mode is
-# broken on Windows (it fails with "being used by another process").
 & $termp autostart disable 2>$null | Out-Null
 Start-Process -FilePath $termp -ArgumentList 'start', '--foreground' -WindowStyle Hidden | Out-Null
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 4
 
-# ---------------------------------------------------------------- 5. status ---
+Step 'Registering the logon task'
+try {
+    $user      = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $action    = New-ScheduledTaskAction -Execute 'powershell.exe' `
+        -Argument ('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f $HelperPath)
+    $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $user
+    $trigger.Delay = 'PT20S'
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero)
+    Register-ScheduledTask -TaskName 'termp presence' -Action $action -Trigger $trigger `
+        -Principal $principal -Settings $settings -Force `
+        -Description 'Start the termp Discord presence daemon hidden at logon' | Out-Null
+    Ok 'Task "termp presence" registered - presence comes back by itself after a reboot.'
+} catch {
+    Warn "Could not register the logon task: $($_.Exception.Message)"
+    Warn 'Presence still works now, but you will have to start the daemon manually after a reboot.'
+}
+
+# ---------------------------------------------------------------- 6. status ---
 Step 'Status'
 & $termp status | Out-Host
 
 Write-Host "`nDone. Launch pi in a terminal and check your Discord profile:" -ForegroundColor Cyan
 Write-Host '  "Using Pi" + the Pi icon' -ForegroundColor Gray
-Write-Host "Restart later with:`n  Start-Process (Get-Command termp).Source -ArgumentList 'start','--foreground' -WindowStyle Hidden`n" -ForegroundColor Gray
+Write-Host "`nAfter a reboot the task starts the daemon for you (~20s after logon)." -ForegroundColor Gray
+Write-Host "Manual start:`n  powershell -NoProfile -WindowStyle Hidden -File `"$HelperPath`"`n" -ForegroundColor Gray
